@@ -2,8 +2,6 @@
 
 # Overview 
 
-This program reads one or more input FASTA files. For each file it computes a variety of statistics, and then prints a summary of the statistics as output.
-
 In the examples below, `$` indicates the command line prompt.
 
 # Licence
@@ -58,120 +56,17 @@ See below for information about running umitrans within the Docker container.
 
 # General behaviour
 
-Umitrans accepts zero or more FASTA filenames on the command line. If zero filenames are specified it reads a single FASTA file from the standard input device (stdin). Otherwise it reads each named FASTA file in the order specified on the command line. Umitrans reads each input FASTA file, computes various statistics about the contents of the file, and then displays a tab-delimited summary of the statistics as output. Each input file produces at most one output line of statistics. Each line of output is prefixed by the input filename or by the text "`stdin`" if the standard input device was used.
-
-Umitrans processes each FASTA file one sequence at a time. Therefore the memory usage is proportional to the longest sequence in the file.
-
-An optional command line argument `--minlen` can be supplied. Sequences with length strictly less than the given value will be ignored by umitrans and do not contribute to the computed statistics. By default `--minlen` is set to zero.
-
-These are the statistics computed by umitrans, for all sequences with length greater-than-or-equal-to `--minlen`:
-
-* *NUMSEQ*: the number of sequences in the file satisfying the minimum length requirement.
-* *TOTAL*: the total length of all the counted sequences.
-* *MIN*: the minimum length of the counted sequences.
-* *AVERAGE*: the average length of the counted sequences rounded down to an integer.
-* *MAX*: the maximum length of the counted sequences.
-
-If there are zero sequences counted in a file, the values of MIN, AVERAGE and MAX cannot be computed. In that case umitrans will print a dash (`-`) in the place of the numerical value. Note that when `--minlen` is set to a value greater than zero it is possible that an input FASTA file does not contain any sequences with length greater-than-or-equal-to the specified value. If this situation arises umitrans acts in the same way as if there are no sequences in the file.
-
 ## Help message
 
 Umitrans can display usage information on the command line via the `-h` or `--help` argument:
 
 ```
 $ umitrans -h
-usage: umitrans [-h] [--minlen N] [--version] [--log LOG_FILE]
-                  [FASTA_FILE [FASTA_FILE ...]]
-
-Print fasta stats
-
-positional arguments:
-  FASTA_FILE      Input FASTA files
-
-optional arguments:
-  -h, --help      show this help message and exit
-  --minlen N      Minimum length sequence to include in stats (default 0)
-  --version       show program's version number and exit
-  --log LOG_FILE  record program progress in LOG_FILE
-```
-
-## Reading FASTA files named on the command line
-
-Umitrans accepts zero or more named FASTA files on the command line. These must be specified following all other command line arguments. If zero files are named, umitrans will read a single FASTA file from the standard input device (stdin).
-
-There are no restrictions on the name of the FASTA files. Often FASTA filenames end in `.fa` or `.fasta`, but that is merely a convention, which is not enforced by umitrans. 
-
-The example below illustrates umitrans applied to a single named FASTA file called `file1.fa`:
-```
-$ umitrans file1.fa
-FILENAME	NUMSEQ	TOTAL	MIN	AVG	MAX
-file1.fa	5264	3801855	31	722	53540
-```
-
-The example below illustrates umitrans applied to three FASTA files called `file1.fa`, `file2.fa` and `file3.fa`:
-```
-$ umitrans file1.fa file2.fa file3.fa
-FILENAME	NUMSEQ	TOTAL	MIN	AVG	MAX
-file1.fa	5264	3801855	31	722	53540
-file2.fa	1245	982374	8	393	928402
-file3.fa	64	8376	102	123	212	
-```
-
-## Reading a single FASTA file from standard input 
-
-The example below illustrates umitrans reading a FASTA file from standard input. In this example we have redirected the contents of a file called `file1.fa` into the standard input using the shell redirection operator `<`:
-
-```
-$ umitrans < file1.fa
-FILENAME	NUMSEQ	TOTAL	MIN	AVG	MAX
-stdin	5264	3801855	31	722	53540
-```
-
-Equivalently, you could achieve the same result by piping a FASTA file into umitrans:
-
-```
-$ cat file1.fa | umitrans
-FILENAME	NUMSEQ	TOTAL	MIN	AVG	MAX
-stdin	5264	3801855	31	722	53540
-```
-
-## Filtering sequences by length 
-
-Umitrans provides an optional command line argument `--minlen` which causes it to ignore (not count) any sequences in the input FASTA files with length strictly less than the supplied value. 
-
-The example below illustrates umitrans applied to a single FASTA file called `file`.fa` with a `--minlen` filter of 1000.
-```
-$ umitrans --minlen 1000 file.fa
-FILENAME	NUMSEQ	TOTAL	MIN	AVG	MAX
-file1.fa	4711	2801855	1021	929	53540
 ```
 
 ## Logging
 
 If the ``--log FILE`` command line argument is specified, umitrans will output a log file containing information about program progress. The log file includes the command line used to execute the program, and a note indicating which files have been processes so far. Events in the log file are annotated with their date and time of occurrence. 
-
-```
-$ umitrans --log bt.log file1.fasta file2.fasta 
-```
-```
-$ cat bt.log
-2016-12-04T19:14:47 program started
-2016-12-04T19:14:47 command line: /usr/local/bin/umitrans --log bt.log file1.fasta file2.fasta
-2016-12-04T19:14:47 Processing FASTA file from file1.fasta
-2016-12-04T19:14:47 Processing FASTA file from file2.fasta
-```
-
-
-## Empty files
-
-It is possible that the input FASTA file contains zero sequences, or, when the `--minlen` command line argument is used, it is possible that the file contains no sequences of length greater-than-or-equal-to the supplied value. In both of those cases umitrans will not be able to compute minimum, maximum or average sequence lengths, and instead it shows output in the following way:
-
-The example below illustrates umitrans applied to a single FASTA file called `empty.fa` which contains zero sequences:
-```
-$ umitrans empty.fa
-FILENAME	NUMSEQ	TOTAL	MIN	AVG	MAX
-empty.fa	0	0	-	-	-
-```
 
 ## Exit status values
 
@@ -203,78 +98,8 @@ Display the version number:
 $ docker run -i umitrans umitrans --version
 ```
 
-Read from a single input FASTA file redirected from standard input:
-```
-$ docker run -i umitrans umitrans < file.FASTA 
-```
-
-Read from multuple input FASTA files named on the command line, where all the files are in the same directory. You must replace `DATA` with the absolute file path of the directory containing the FASTA files:  
-```
-$ docker run -i -v DATA:/in umitrans umitrans /in/file1.fasta /in/file2.fasta /in/file3.fasta
-```
-The argument `DATA:/in` maps the directory called DATA on your local machine into the `/in` directory within the Docker container.
-
-Logging progress to a file in the directory OUT: 
-```
-$ docker run -i -v DATA:/in -v OUT:/out umitrans-c umitrans --log /out/logfile.txt /in/file1.fasta /in/file2.fasta /in/file3.fasta
-```
-Replace `OUT` with the absolute path of the directory to write the log file. For example, if you want the log file written to the current working directory, replace `OUT` with `$PWD`.
-As above, you will also need to replace `DATA` with the absolite path to the directory containing your input FASTA files.
-
-# Testing
-
-## Unit tests
-
-You can run the unit tests for umitrans with the following commands:
-```
-$ cd umitrans/python/umitrans
-$ python -m unittest -v umitrans_test
-```
-
-## Test suite
-
-Sample test input files are provided in the `functional_tests/test_data` folder.
-```
-$ cd functional_tests/test_data
-$ umitrans two_sequence.fasta
-FILENAME        TOTAL   NUMSEQ  MIN     AVG     MAX
-two_sequence.fasta      2       357     120     178     237
-```
-
-Automated tests can be run using the `functional_tests/umitrans-test.sh` script like so:
-
-```
-$ cd functional_tests
-$ ./umitrans-test.sh -p umitrans -d test_data
-```
-
-The `-p` argument specifies the name of the program to test, the `-d` argument specifies the path of the directory containing test data.
-The script will print the number of passed and failed test cases. More detailed information about each test case can be obtained
-by requesting "verbose" output with the `-d` flag:
-
-```
-$ ./umitrans-test.sh -p umitrans -d test_data -v
-```
-
-The test script can also be run inside the Docker container:
-```
-$ docker run umitrans /umitrans/functional_tests/umitrans-test.sh -p umitrans -d /umitrans/functional_tests/test_data -v
-```
-
-# Common Workflow Language (CWL) wrapper
-
-The [Common Workflow Language (CWL)](https://www.commonwl.org/) specifies a portable mechanism for running software tools and workflows across many different platforms.
-We provide an example CWL wrapper for umitrans in the file `umitrans.cwl`. It invokes umitrans using the Docker container (described above). This wrapper allows you
-to easily incorporate umitrans into CWL workflows, and can be executed by any CWL-supporting workflow engine.
-
-You can test the wrapper using the `cwltool` workflow runner, which is provided by the CWL project (see the CWL documentation for how to install this on your computer).
-
-```
-$ cwltool umitrans.cwl --fasta_file file.fasta 
-```
-
 # Bug reporting and feature requests
 
 Please submit bug reports and feature requests to the issue tracker on GitHub:
 
-[umitrans issue tracker](https://github.com/GITHUB_USERNAME/umitrans/issues)
+[umitrans issue tracker](https://github.com/bjpop/umitrans/issues)

@@ -5,27 +5,26 @@ Copyright   : (c) Bernie Pope, 22 Dec 2020
 License     : BSD-3-Clause 
 Maintainer  : bjpope@unimelb.edu.au 
 Portability : POSIX
-
-The program reads one or more input FASTA files. For each file it computes a
-variety of statistics, and then prints a summary of the statistics as output.
 '''
 
 from argparse import ArgumentParser
-from math import floor
 import sys
 import logging
 import pkg_resources
-from Bio import SeqIO
+from itertools import zip_longest, islice
+from contextlib import ExitStack
+import pyfastx 
 
 
 EXIT_FILE_IO_ERROR = 1
 EXIT_COMMAND_LINE_ERROR = 2
-EXIT_FASTA_FILE_ERROR = 3
-DEFAULT_MIN_LEN = 0
-DEFAULT_VERBOSE = False
-HEADER = 'FILENAME\tNUMSEQ\tTOTAL\tMIN\tAVG\tMAX'
 PROGRAM_NAME = "umitrans"
+DEFAULT_SEPARATOR = ":"
 
+# We assume that FASTQ files are formatted to 4 lines per record, where
+# the 
+START_LINE = 2
+STEP_SIZE = 4
 
 try:
     PROGRAM_VERSION = pkg_resources.require(PROGRAM_NAME)[0].version
@@ -52,153 +51,14 @@ def parse_args():
     Returns Options object with command line argument values as attributes.
     Will exit the program on a command line error.
     '''
-    description = 'Read one or more FASTA files, compute simple stats for each file'
+    description = 'Transfer UMI sequences from a FASTQ file to read IDs in one or more FASTQ files'
     parser = ArgumentParser(description=description)
-    parser.add_argument(
-        '--minlen',
-        metavar='N',
-        type=int,
-        default=DEFAULT_MIN_LEN,
-        help='Minimum length sequence to include in stats (default {})'.format(
-            DEFAULT_MIN_LEN))
-    parser.add_argument('--version',
-                        action='version',
-                        version='%(prog)s ' + PROGRAM_VERSION)
-    parser.add_argument('--log',
-                        metavar='LOG_FILE',
-                        type=str,
-                        help='record program progress in LOG_FILE')
-    parser.add_argument('fasta_files',
-                        nargs='*',
-                        metavar='FASTA_FILE',
-                        type=str,
-                        help='Input FASTA files')
+    parser.add_argument('--version', action='version', version='%(prog)s ' + PROGRAM_VERSION)
+    parser.add_argument('--log', metavar='LOG_FILE', type=str, help='record program progress in LOG_FILE')
+    parser.add_argument('--umi', metavar='FILE', type=str, required=True, help='FASTQ file containing UMI sequences')
+    parser.add_argument('--sep', metavar='STR', type=str, default=DEFAULT_SEPARATOR, help='Separator between read ID and UMI, default is \'%(default)s\'')
+    parser.add_argument('--seq', nargs='+', metavar='FILE', type=str, help='Input FASTQ files')
     return parser.parse_args()
-
-
-class FastaStats(object):
-    '''Compute various statistics for a FASTA file:
-
-    num_seqs: the number of sequences in the file satisfying the minimum
-       length requirement (minlen_threshold).
-    num_bases: the total length of all the counted sequences.
-    min_len: the minimum length of the counted sequences.
-    max_len: the maximum length of the counted sequences.
-    average: the average length of the counted sequences rounded down
-       to an integer.
-    '''
-    #pylint: disable=too-many-arguments
-    def __init__(self,
-                 num_seqs=None,
-                 num_bases=None,
-                 min_len=None,
-                 max_len=None,
-                 average=None):
-        "Build an empty FastaStats object"
-        self.num_seqs = num_seqs
-        self.num_bases = num_bases
-        self.min_len = min_len
-        self.max_len = max_len
-        self.average = average
-
-    def __eq__(self, other):
-        "Two FastaStats objects are equal iff their attributes are equal"
-        if type(other) is type(self):
-            return self.__dict__ == other.__dict__
-        return False
-
-    def __repr__(self):
-        "Generate a printable representation of a FastaStats object"
-        return "FastaStats(num_seqs={}, num_bases={}, min_len={}, max_len={}, " \
-            "average={})".format(
-                self.num_seqs, self.num_bases, self.min_len, self.max_len,
-                self.average)
-
-    def from_file(self, fasta_file, minlen_threshold=DEFAULT_MIN_LEN):
-        '''Compute a FastaStats object from an input FASTA file.
-
-        Arguments:
-           fasta_file: an open file object for the FASTA file
-           minlen_threshold: the minimum length sequence to consider in
-              computing the statistics. Sequences in the input FASTA file
-              which have a length less than this value are ignored and not
-              considered in the resulting statistics.
-        Result:
-           A FastaStats object
-        '''
-        num_seqs = num_bases = 0
-        min_len = max_len = None
-        for seq in SeqIO.parse(fasta_file, "fasta"):
-            this_len = len(seq)
-            if this_len >= minlen_threshold:
-                if num_seqs == 0:
-                    min_len = max_len = this_len
-                else:
-                    min_len = min(this_len, min_len)
-                    max_len = max(this_len, max_len)
-                num_seqs += 1
-                num_bases += this_len
-        if num_seqs > 0:
-            self.average = int(floor(float(num_bases) / num_seqs))
-        else:
-            self.average = None
-        self.num_seqs = num_seqs
-        self.num_bases = num_bases
-        self.min_len = min_len
-        self.max_len = max_len
-        return self
-
-    def pretty(self, filename):
-        '''Generate a pretty printable representation of a FastaStats object
-        suitable for output of the program. The output is a tab-delimited
-        string containing the filename of the input FASTA file followed by
-        the attributes of the object. If 0 sequences were read from the FASTA
-        file then num_seqs and num_bases are output as 0, and min_len, average
-        and max_len are output as a dash "-".
-
-        Arguments:
-           filename: the name of the input FASTA file
-        Result:
-           A string suitable for pretty printed output
-        '''
-        if self.num_seqs > 0:
-            num_seqs = str(self.num_seqs)
-            num_bases = str(self.num_bases)
-            min_len = str(self.min_len)
-            average = str(self.average)
-            max_len = str(self.max_len)
-        else:
-            num_seqs = num_bases = "0"
-            min_len = average = max_len = "-"
-        return "\t".join([filename, num_seqs, num_bases, min_len, average,
-                          max_len])
-
-
-def process_files(options):
-    '''Compute and print FastaStats for each input FASTA file specified on the
-    command line. If no FASTA files are specified on the command line then
-    read from the standard input (stdin).
-
-    Arguments:
-       options: the command line options of the program
-    Result:
-       None
-    '''
-    if options.fasta_files:
-        for fasta_filename in options.fasta_files:
-            logging.info("Processing FASTA file from %s", fasta_filename)
-            try:
-                fasta_file = open(fasta_filename)
-            except IOError as exception:
-                exit_with_error(str(exception), EXIT_FILE_IO_ERROR)
-            else:
-                with fasta_file:
-                    stats = FastaStats().from_file(fasta_file, options.minlen)
-                    print(stats.pretty(fasta_filename))
-    else:
-        logging.info("Processing FASTA file from stdin")
-        stats = FastaStats().from_file(sys.stdin, options.minlen)
-        print(stats.pretty("stdin"))
 
 
 def init_logging(log_filename):
@@ -222,12 +82,39 @@ def init_logging(log_filename):
         logging.info('program started')
         logging.info('command line: %s', ' '.join(sys.argv))
 
+def process_files(options):
+    input_filenames = [options.umi] + options.seq
+    input_files = [pyfastx.Fastx(fname) for fname in input_filenames] 
+    output_filenames = [name + ".umi" for name in options.seq]
+    output_files = [open(fname, "w") for fname in output_filenames]
+    for records in zip_longest(*input_files):
+        if len(records) >= 1:
+           umi_record = records[0]
+           if umi_record is not None and len(umi_record) == 4:
+               umi_name, umi_seq, _umi_qual, umi_comment = umi_record
+           else:
+               exit_with_error(f"Badly formed UMI record in input UMI FASTQ file: {umi_record}", EXIT_FILE_IO_ERROR)
+           fastq_records = records[1:]
+           for output_file, this_record in zip(output_files, fastq_records):
+               if this_record is not None and len(this_record) == 4:
+                   this_name, this_seq, this_qual, this_comment = this_record 
+                   if this_name == umi_name:
+                       new_name = this_name + options.sep + umi_seq
+                       print(f"@{new_name} {this_comment}\n{this_seq}\n+\n{this_qual}", file=output_file)
+               else:
+                   exit_with_error(f"Badly formed FASTQ record in input FASTQ file: {this_record}", EXIT_FILE_IO_ERROR)
+    # FASTX does not appear to provide a proper context manager for files, so
+    # we resort to trying to close files here.
+    for file in input_files:
+        file.close()
+    for file in output_files:
+        file.close()
+      
 
 def main():
     "Orchestrate the execution of the program"
     options = parse_args()
     init_logging(options.log)
-    print(HEADER)
     process_files(options)
 
 
