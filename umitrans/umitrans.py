@@ -14,7 +14,8 @@ import pkg_resources
 from itertools import zip_longest, islice
 from contextlib import ExitStack
 import pyfastx 
-
+from pathlib import PurePath
+import os
 
 EXIT_FILE_IO_ERROR = 1
 EXIT_COMMAND_LINE_ERROR = 2
@@ -82,16 +83,33 @@ def init_logging(log_filename):
         logging.info('program started')
         logging.info('command line: %s', ' '.join(sys.argv))
 
+
+def make_output_filename(input_filename):
+    name = PurePath(input_filename).name
+    replaceable_suffixes = [".fastq.gz", ".fq.gz", ".fastq", ".fq"]
+    for s in replaceable_suffixes:
+        if name.endswith(s):
+            name = name[:-len(s)]
+            break
+    new_name = name + ".umi.fastq"
+    if os.path.exists(new_name):
+        exit_with_error(f"Output filename already exists: {new_name}, will not overwrite", EXIT_FILE_IO_ERROR)
+    else:
+        return new_name
+
+
 def process_files(options):
     input_filenames = [options.umi] + options.seq
     input_files = [pyfastx.Fastx(fname) for fname in input_filenames] 
-    output_filenames = [name + ".umi" for name in options.seq]
+    output_filenames = [make_output_filename(name) for name in options.seq]
     output_files = [open(fname, "w") for fname in output_filenames]
     for records in zip_longest(*input_files):
         if len(records) >= 1:
            umi_record = records[0]
            if umi_record is not None and len(umi_record) == 4:
                umi_name, umi_seq, _umi_qual, umi_comment = umi_record
+           elif umi_record is None:
+               exit_with_error(f"Input FASTQ files do not have the same number of records", EXIT_FILE_IO_ERROR)
            else:
                exit_with_error(f"Badly formed UMI record in input UMI FASTQ file: {umi_record}", EXIT_FILE_IO_ERROR)
            fastq_records = records[1:]
@@ -101,12 +119,15 @@ def process_files(options):
                    if this_name == umi_name:
                        new_name = this_name + options.sep + umi_seq
                        print(f"@{new_name} {this_comment}\n{this_seq}\n+\n{this_qual}", file=output_file)
+               elif this_record is None:
+                   exit_with_error(f"Input FASTQ files do not have the same number of records", EXIT_FILE_IO_ERROR)
                else:
                    exit_with_error(f"Badly formed FASTQ record in input FASTQ file: {this_record}", EXIT_FILE_IO_ERROR)
     # FASTX does not appear to provide a proper context manager for files, so
     # we resort to trying to close files here.
-    for file in input_files:
-        file.close()
+    # Issue has been created on GitHub: https://github.com/lmdu/pyfastx/issues/27
+    #for file in input_files:
+    #    file.close()
     for file in output_files:
         file.close()
       
